@@ -80,20 +80,7 @@ class MeteoAgricoleSensor(SensorEntity):
             #     parent_div = ressenti_element.find_parent('div')
             #     valeur_ressenti = parent_div.find('span', class_='fw-bold').get_text(strip=True)
             #     _LOGGER.debug(f"Température ressentie trouvée : {valeur_ressenti}")
-
-            
-            # Ici, nous mettons une valeur par défaut en attendant de trouver 
-            # la bonne balise (ex: div class="temp-actuelle")
-            
-            # Exemple bidon : on compte le nombre de balises <div> sur la page 
-            # juste pour s'assurer que le HTML a bien été lu.
-            div_count = len(soup.find_all('div'))
-            self._state = div_count 
-            
-            # Plus tard, le code ressemblera à :
-            # temp_element = soup.find('div', class_='temperature')
-            # self._state = float(temp_element.text.replace('°C', ''))
-
+        
         except Exception as err:
             _LOGGER.error("Erreur lors du scraping de La Météo Agricole: %s", err)
             self._state = None
