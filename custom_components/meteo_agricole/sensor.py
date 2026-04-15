@@ -59,6 +59,29 @@ class MeteoAgricoleSensor(SensorEntity):
             soup = BeautifulSoup(response.text, 'html.parser')
 
             # === ZONE DE RECHERCHE CSS ===
+            # On cible tous les éléments <span> qui ont la classe 'fs-4'
+            temp_elements = soup.find_all('span', class_='fs-4')
+            
+            # On parcourt les résultats pour trouver la première vraie température
+            for element in temp_elements:
+                texte = element.get_text(strip=True) # Extrait "16°"
+                
+                if '°' in texte:
+                    # On nettoie le texte pour ne garder que le chiffre numérique
+                    valeur_propre = texte.replace('°', '').strip()
+                    
+                    # On met à jour l'état du capteur
+                    self._state = float(valeur_propre)
+                    break # On arrête la recherche dès qu'on a trouvé la température principale
+
+            # Bonus : Pour extraire la température ressentie (présente dans votre HTML)
+            # ressenti_element = soup.find(string="Ressenti")
+            # if ressenti_element:
+            #     parent_div = ressenti_element.find_parent('div')
+            #     valeur_ressenti = parent_div.find('span', class_='fw-bold').get_text(strip=True)
+            #     _LOGGER.debug(f"Température ressentie trouvée : {valeur_ressenti}")
+
+            
             # Ici, nous mettons une valeur par défaut en attendant de trouver 
             # la bonne balise (ex: div class="temp-actuelle")
             
