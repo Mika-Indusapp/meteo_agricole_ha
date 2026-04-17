@@ -89,6 +89,31 @@ def fetch_all_meteo_data(lat, lon):
                         temp_min_text = temp_min_span.get_text(strip=True).replace('min', '').replace('°', '').replace('\xa0', '')
                         temp_min = float(temp_min_text)
 
+                    # --- NOUVEAU : Extraction Précipitations et Probabilité ---
+                    precip = 0.0
+                    prob_precip = 0
+                    
+                    # 1. Volume de pluie (mm)
+                    precip_label = cell.find('span', string=lambda s: s and 'Précipitations' in s)
+                    if precip_label:
+                        val_span = precip_label.find_next_sibling('span', class_='fw-bold')
+                        if val_span:
+                            val_text = val_span.get_text(strip=True).replace('\xa0', ' ')
+                            if 'à' in val_text:
+                                # Si "1 à 2", on garde le 2 (la pire condition)
+                                precip = float(val_text.split('à')[-1].strip())
+                            else:
+                                try: precip = float(val_text)
+                                except ValueError: pass
+
+                    # 2. Probabilité (%)
+                    prob_label = cell.find('span', string=lambda s: s and 'Probabilité' in s)
+                    if prob_label:
+                        prob_text = prob_label.get_text(strip=True).replace('Probabilité :', '').replace('%', '').strip()
+                        try: prob_precip = int(prob_text)
+                        except ValueError: pass
+                    # -----------------------------------------------------------
+
                     # Le jour 0 est aujourd'hui, jour 1 est demain, etc.
                     forecast_date = datetime.now() + timedelta(days=index)
                     
@@ -98,6 +123,8 @@ def fetch_all_meteo_data(lat, lon):
                             condition=ha_condition,
                             native_temperature=temp_max,
                             native_templow=temp_min,
+                            native_precipitation=precip,
+                            precipitation_probability=prob_precip
                         )
                     )
                     
