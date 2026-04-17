@@ -1,4 +1,4 @@
-# 🌤️ La Météo Agricole pour Home Assistant
+# ![Logo](logo.svg) La Météo Agricole pour Home Assistant
 
 ![Version](https://img.shields.io/github/v/release/Mika-Indusapp/meteo_agricole_ha?style=for-the-badge)
 ![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)
