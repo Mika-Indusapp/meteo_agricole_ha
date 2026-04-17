@@ -61,8 +61,11 @@ La configuration se fait entièrement via l'interface graphique (UI), aucune lig
 
 ## 📸 Captures d'écran
 
-*(Ajoutez ici des captures d'écran de votre carte météo dans Lovelace pour montrer le résultat final !)*
+Aperçu de la carte météo native avec les prévisions quotidiennes et horaires :
 
+![Prévision à 10 jours](capture1.png)
+
+![Heure par heure](capture2.png)
 
 ---
 
