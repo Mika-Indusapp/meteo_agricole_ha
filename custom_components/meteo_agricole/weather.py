@@ -89,7 +89,7 @@ def fetch_all_meteo_data(lat, lon):
                         temp_min_text = temp_min_span.get_text(strip=True).replace('min', '').replace('°', '').replace('\xa0', '')
                         temp_min = float(temp_min_text)
 
-                    # --- NOUVEAU : Extraction Précipitations et Probabilité ---
+                    # --- Extraction Précipitations et Probabilité ---
                     precip = 0.0
                     prob_precip = 0
                     
@@ -188,6 +188,11 @@ def fetch_all_meteo_data(lat, lon):
                             native_temperature=temp,
                         )
                     )
+                    
+                    # On profite de heure actuelle pour affiner la température actuelle
+                    if heure_index == 1:
+                        data["current"]["temp"] = temp
+                    
                     heure_index += 1 # On passe à l'heure suivante
                     
             except Exception as e:
@@ -224,6 +229,21 @@ class MeteoAgricoleWeather(CoordinatorEntity, WeatherEntity):
     def native_temperature(self):
         """Température actuelle."""
         return self.coordinator.data["current"].get("temp")
+
+    @property
+    def native_humidity(self) -> float | None:
+        """Retourne l'humidité."""
+        return self.coordinator.data["current"].get("humidity")
+
+    @property
+    def native_wind_speed(self) -> float | None:
+        """Retourne la vitesse du vent."""
+        return self.coordinator.data["current"].get("wind_speed")
+
+    @property
+    def native_wind_gust_speed(self) -> float | None:
+        """Retourne la vitesse des rafales."""
+        return self.coordinator.data["current"].get("wind_gust")
         
     @property
     def extra_state_attributes(self):
