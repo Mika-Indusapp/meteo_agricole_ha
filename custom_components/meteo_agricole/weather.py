@@ -228,13 +228,13 @@ class MeteoAgricoleWeather(CoordinatorEntity, WeatherEntity):
     @property
     def extra_state_attributes(self):
         """Return additional state attributes."""
-        # On récupère les attributs existants (s'il y en a)
         attributes = {}
         
-        # On ajoute notre marqueur temporel (l'heure du dernier succès du coordinateur)
-        # self.coordinator.last_update_success_time contient un objet datetime
-        if self.coordinator.last_update_success_time:
-            attributes["derniere_synchro_reussie"] = self.coordinator.last_update_success_time.strftime("%Y-%m-%d %H:%M:%S")
+        # On vérifie si le coordinateur est en succès (True/False)
+        if self.coordinator.last_update_success:
+            from datetime import datetime
+            # On génère l'heure exacte à l'instant T
+            attributes["Dernière synchro réussie"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
         return attributes
         
