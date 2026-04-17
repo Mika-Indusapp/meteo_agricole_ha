@@ -224,7 +224,20 @@ class MeteoAgricoleWeather(CoordinatorEntity, WeatherEntity):
     def native_temperature(self):
         """Température actuelle."""
         return self.coordinator.data["current"].get("temp")
+        
+    @property
+    def extra_state_attributes(self):
+        """Return additional state attributes."""
+        # On récupère les attributs existants (s'il y en a)
+        attributes = {}
+        
+        # On ajoute notre marqueur temporel (l'heure du dernier succès du coordinateur)
+        # self.coordinator.last_update_success_time contient un objet datetime
+        if self.coordinator.last_update_success_time:
+            attributes["derniere_synchro_reussie"] = self.coordinator.last_update_success_time.strftime("%Y-%m-%d %H:%M:%S")
 
+        return attributes
+        
     async def async_forecast_daily(self) -> list[Forecast]:
         """Retourne les prévisions sur 10 jours (Min/Max)."""
         return self.coordinator.data.get("daily", [])
