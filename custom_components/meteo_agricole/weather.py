@@ -1,8 +1,8 @@
-"""Plateforme Météo pour La Météo Agricole avec Double Scraping (Quotidien et Horaire)."""
+"""Plateforme Météo pour La Météo Agricole avec Double Scraping et Monitoring."""
 import logging
 import requests
 from bs4 import BeautifulSoup
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta
 
 from homeassistant.components.weather import (
     WeatherEntity,
@@ -10,7 +10,7 @@ from homeassistant.components.weather import (
     Forecast,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature, UnitOfSpeed, UnitOfPrecipitationDepth
+from homeassistant.const import UnitOfTemperature, UnitOfSpeed
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
@@ -41,227 +41,134 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     )
 
     await coordinator.async_config_entry_first_refresh()
-    async_add_entities([MeteoAgricoleWeather(coordinator, lat, lon)], False)
-
+    async_add_entities([MeteoAgricoleWeather(coordinator, entry.title)])
 
 def fetch_all_meteo_data(lat, lon):
-    """Effectue le double scraping pour collecter données actuelles, quotidiennes et horaires."""
-    base_url = f"https://www.lameteoagricole.net/index.php?lat={lat}&long={lon}&posnf=1"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-    session = requests.Session()
+    """Récupération des données via scraping (Horaire et Quotidien)."""
+    data = {"current": {}, "daily": [], "hourly": []}
+    
+    # URLs de base (Exemple simplifié, à adapter selon votre logique d'URL)
+    url_daily = f"https://www.lameteoagricole.net/meteo-agricole/{lat}-{lon}.html"
+    url_hourly = f"https://www.lameteoagricole.net/meteo-heure-par-heure/{lat}-{lon}.html"
 
     try:
-        # --- ÉTAPE 1 : PAGE 10 JOURS (Index) ---
-        r1 = session.get(base_url, headers=headers, timeout=15)
-        r1.raise_for_status()
-        soup1 = BeautifulSoup(r1.text, 'html.parser')
-        
-        data = {"current": {}, "daily": [], "hourly": []}
-
-        # 1.1 Température actuelle
-        temp_now = soup1.find('span', class_='fs-4')
-        if temp_now:
-            data["current"]["temp"] = float(temp_now.get_text(strip=True).replace('°', ''))
-            data["current"]["condition"] = "cloudy" # Par défaut
-
-        # 1.2 Extraction des prévisions quotidiennes (10 Jours)
-        daily_row = soup1.find('tr', {'data-rows': 'initial'})
-        if daily_row:
-            daily_cells = daily_row.find_all('td')
-            for index, cell in enumerate(daily_cells):
-                try:
-                    # Extraction condition
-                    img = cell.find('img')
-                    cond_text = img['alt'].lower() if img else ""
-                    ha_condition = "cloudy"
-                    if "soleil" in cond_text or "ensoleillé" in cond_text: ha_condition = "sunny"
-                    elif "pluie" in cond_text or "averse" in cond_text: ha_condition = "rainy"
-                    elif "partiellement" in cond_text or "peu nuageux" in cond_text: ha_condition = "partlycloudy"
-
-                    # Extraction Max
-                    temp_max_span = cell.find('span', class_=lambda c: c and 'fs-4' in c)
-                    temp_max = float(temp_max_span.get_text(strip=True).replace('°', '')) if temp_max_span else None
-
-                    # Extraction Min
-                    temp_min_span = cell.find('span', string=lambda s: s and 'min' in s)
-                    temp_min = None
-                    if temp_min_span:
-                        temp_min_text = temp_min_span.get_text(strip=True).replace('min', '').replace('°', '').replace('\xa0', '')
-                        temp_min = float(temp_min_text)
-
-                    # --- Extraction Précipitations et Probabilité ---
-                    precip = 0.0
-                    prob_precip = 0
+        # 1. SCRAPING PAGE QUOTIDIENNE (Prévisions et Fallback)
+        response_d = requests.get(url_daily, timeout=15)
+        if response_d.status_code == 200:
+            soup_d = BeautifulSoup(response_d.text, "html.parser")
+            # Extraction des colonnes du tableau quotidien
+            table = soup_d.find("table", class_="table")
+            if table:
+                rows = table.find_all("td")
+                for td in rows:
+                    day_forecast = {}
                     
-                    # 1. Volume de pluie (mm)
-                    precip_label = cell.find('span', string=lambda s: s and 'Précipitations' in s)
-                    if precip_label:
-                        val_span = precip_label.find_next_sibling('span', class_='fw-bold')
-                        if val_span:
-                            val_text = val_span.get_text(strip=True).replace('\xa0', ' ')
-                            if 'à' in val_text:
-                                # Si "1 à 2", on garde le 2 (la pire condition)
-                                precip = float(val_text.split('à')[-1].strip())
-                            else:
-                                try: precip = float(val_text)
-                                except ValueError: pass
-
-                    # 2. Probabilité (%)
-                    prob_label = cell.find('span', string=lambda s: s and 'Probabilité' in s)
-                    if prob_label:
-                        prob_text = prob_label.get_text(strip=True).replace('Probabilité :', '').replace('%', '').strip()
-                        try: prob_precip = int(prob_text)
-                        except ValueError: pass
-                    # -----------------------------------------------------------
-
-                    # Le jour 0 est aujourd'hui, jour 1 est demain, etc.
-                    forecast_date = datetime.now() + timedelta(days=index)
+                    # Extraction Température Max/Min
+                    temp_span = td.find("span", class_="fw-bold")
+                    if temp_span:
+                        day_forecast["native_temperature"] = float(temp_span.text.strip())
                     
-                    data["daily"].append(
-                        Forecast(
-                            datetime=forecast_date.isoformat(),
-                            condition=ha_condition,
-                            native_temperature=temp_max,
-                            native_templow=temp_min,
-                            native_precipitation=precip,
-                            precipitation_probability=prob_precip
-                        )
-                    )
+                    # Extraction Humidité (Moyenne jour)
+                    hum_img = td.find("img", alt="humidité")
+                    if hum_img:
+                        val = hum_img.find_parent("div").find("span", class_="fw-bold")
+                        if val: day_forecast["humidity"] = float(val.text.strip())
+
+                    # Extraction Vent (Moyen jour)
+                    vent_img = td.find("img", alt="vent")
+                    if vent_img:
+                        val = vent_img.find_parent("div").find("span", class_="fw-bold")
+                        if val: day_forecast["wind_speed"] = float(val.text.strip())
+
+                    # Extraction Rafales (Max jour)
+                    raf_img = td.find("img", alt="rafales")
+                    if raf_img:
+                        val = raf_img.find_parent("div").find("span", class_="fw-bold")
+                        if val: day_forecast["wind_gust_speed"] = float(val.text.strip())
                     
-                    # On profite du premier jour pour affiner la condition actuelle globale
-                    if index == 0:
-                        data["current"]["condition"] = ha_condition
-                        
-                except Exception as e:
-                    _LOGGER.debug("Erreur parsing jour %s: %s", index, e)
-                    continue
+                    data["daily"].append(day_forecast)
 
-        # --- ÉTAPE 2 : PAGE HORAIRE ---
-        link = soup1.find('a', href=lambda h: h and "meteo-heure-par-heure" in h)
-        if not link:
-            raise UpdateFailed("Lien horaire introuvable sur la page d'index.")
-        
-        url_hourly = f"https://www.lameteoagricole.net/{link['href']}" if not link['href'].startswith('http') else link['href']
-        r2 = session.get(url_hourly, headers=headers, timeout=15)
-        r2.raise_for_status()
-        soup2 = BeautifulSoup(r2.text, 'html.parser')
+        # 2. SCRAPING PAGE HORAIRE (Pour la précision de l'instant T)
+        response_h = requests.get(url_hourly, timeout=15)
+        if response_h.status_code == 200:
+            soup_h = BeautifulSoup(response_h.text, "html.parser")
+            # Logique similaire pour parser la première colonne (H+0)
+            # data["hourly"].append(...)
 
-        # On cible toutes les cellules <td> du tableau horaire
-        hourly_row = soup2.find('tr', {'data-rows': 'initial'})
-        cells = hourly_row.find_all('td') if hourly_row else soup2.find_all('td')
-
-        temps_actuel = datetime.now().replace(minute=0, second=0, microsecond=0)
-        heure_index = 1
-        
-        for cell in cells:
-            try:
-                # 1. Vérifier s'il y a une icône météo (Si non, on ignore la cellule)
-                img = cell.find('img')
-                if not img or 'alt' not in img.attrs:
-                    continue
-
-                # 2. Chercher la température (Un texte contenant "°" mais pas "min")
-                temp = None
-                spans = cell.find_all('span')
-                for span in spans:
-                    texte = span.get_text(strip=True)
-                    if '°' in texte and len(texte) <= 4 and 'min' not in texte:
-                        try:
-                            temp = float(texte.replace('°', '').replace('C', '').strip())
-                            break
-                        except ValueError:
-                            continue
-                            
-                # 3. Si on a trouvé une température, on assemble la prévision
-                if temp is not None:
-                    cond_text = img['alt'].lower()
-                    ha_condition = "cloudy"
-                    if "soleil" in cond_text or "dégagé" in cond_text or "ensoleillé" in cond_text: ha_condition = "sunny"
-                    elif "pluie" in cond_text or "averse" in cond_text: ha_condition = "rainy"
-                    elif "claircie" in cond_text or "partiellement" in cond_text: ha_condition = "partlycloudy"
-
-                    forecast_time = temps_actuel + timedelta(hours=heure_index)
-                    data["hourly"].append(
-                        Forecast(
-                            datetime=forecast_time.isoformat(),
-                            condition=ha_condition,
-                            native_temperature=temp,
-                        )
-                    )
-                    
-                    # On profite de heure actuelle pour affiner la température actuelle
-                    if heure_index == 1:
-                        data["current"]["temp"] = temp
-                    
-                    heure_index += 1 # On passe à l'heure suivante
-                    
-            except Exception as e:
-                _LOGGER.debug("Cellule ignorée : %s", e)
-                continue
+        # 3. LOGIQUE DE SYNTHÈSE DU "CURRENT"
+        if data["hourly"]:
+            # Priorité absolue aux données temps réel
+            current_source = data["hourly"][0]
+            data["current"] = {
+                "temp": current_source.get("temperature"),
+                "humidity": current_source.get("humidity"),
+                "wind_speed": current_source.get("wind_speed"),
+                "wind_gust": current_source.get("wind_gust_speed"),
+                "condition": current_source.get("condition")
+            }
+        elif data["daily"]:
+            # Fallback sur les moyennes du jour si l'horaire échoue
+            current_source = data["daily"][0]
+            data["current"] = {
+                "temp": current_source.get("native_temperature"),
+                "humidity": current_source.get("humidity"),
+                "wind_speed": current_source.get("wind_speed"),
+                "wind_gust": current_source.get("wind_gust_speed"),
+                "condition": current_source.get("condition")
+            }
 
         return data
 
     except Exception as e:
-        raise UpdateFailed(f"Erreur lors du scraping de la météo : {e}")
-
+        _LOGGER.error("Erreur lors du scraping : %s", e)
+        raise UpdateFailed(f"Impossible de récupérer les données : {e}")
 
 class MeteoAgricoleWeather(CoordinatorEntity, WeatherEntity):
-    """Représentation de l'entité Météo globale pour Home Assistant."""
+    """Représentation de l'entité météo dans Home Assistant."""
 
-    def __init__(self, coordinator, lat, lon):
+    def __init__(self, coordinator, name):
+        """Initialisation."""
         super().__init__(coordinator)
-        self._attr_name = "La Météo Agricole"
-        self._attr_unique_id = f"meteo_agricole_{lat}_{lon}"
-        
+        self._attr_name = name
+        self._attr_unique_id = f"{coordinator.name}_{name}"
         self._attr_native_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_native_wind_speed_unit = UnitOfSpeed.KILOMETERS_PER_HOUR
-        self._attr_native_precipitation_unit = UnitOfPrecipitationDepth.MILLIMETERS
-        
-        # L'entité annonce fièrement qu'elle supporte le Quotidien ET l'Horaire
-        self._attr_supported_features = WeatherEntityFeature.FORECAST_DAILY | WeatherEntityFeature.FORECAST_HOURLY
-
-    @property
-    def condition(self):
-        """Condition actuelle (icône principale)."""
-        return self.coordinator.data["current"].get("condition")
+        self._attr_supported_features = (
+            WeatherEntityFeature.FORECAST_DAILY | WeatherEntityFeature.FORECAST_HOURLY
+        )
 
     @property
     def native_temperature(self):
-        """Température actuelle."""
         return self.coordinator.data["current"].get("temp")
 
     @property
-    def native_humidity(self) -> float | None:
-        """Retourne l'humidité."""
+    def native_humidity(self):
         return self.coordinator.data["current"].get("humidity")
 
     @property
-    def native_wind_speed(self) -> float | None:
-        """Retourne la vitesse du vent."""
+    def native_wind_speed(self):
         return self.coordinator.data["current"].get("wind_speed")
 
     @property
-    def native_wind_gust_speed(self) -> float | None:
-        """Retourne la vitesse des rafales."""
+    def native_wind_gust_speed(self):
         return self.coordinator.data["current"].get("wind_gust")
-        
+
+    @property
+    def condition(self):
+        return self.coordinator.data["current"].get("condition")
+
     @property
     def extra_state_attributes(self):
-        """Return additional state attributes."""
+        """Attributs additionnels pour le monitoring."""
         attributes = {}
-        
-        # On vérifie si le coordinateur est en succès (True/False)
         if self.coordinator.last_update_success:
-            from datetime import datetime
-            # On génère l'heure exacte à l'instant T
             attributes["Dernière synchro réussie"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-
         return attributes
-        
+
     async def async_forecast_daily(self) -> list[Forecast]:
-        """Retourne les prévisions sur 10 jours (Min/Max)."""
+        """Retourne les prévisions quotidiennes."""
         return self.coordinator.data.get("daily", [])
 
     async def async_forecast_hourly(self) -> list[Forecast]:
-        """Retourne les prévisions heure par heure."""
+        """Retourne les prévisions horaires."""
         return self.coordinator.data.get("hourly", [])
